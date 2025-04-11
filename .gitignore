@@ -4,3 +4,6 @@
 /data.csv
 /stash
 /__pycache__
+pipeline.log
+*__pycache__*
+data/
