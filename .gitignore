@@ -1,0 +1,6 @@
+/.env
+/.venv
+/clean_data.csv
+/data.csv
+/stash
+/__pycache__
