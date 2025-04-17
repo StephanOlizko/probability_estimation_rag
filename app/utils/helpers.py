@@ -23,16 +23,18 @@ class OpenRouterClient:
         self.base_url = "https://openrouter.ai/api/v1"
         self.model=model
 
-    def generate_response(self, messages=None):
+    def generate_response(self, messages=None, response_format=None):
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+
         data = {
             "model": self.model,
             "messages": messages,
         }
+        if response_format is not None: data["response_format"] = response_format
 
         try:
             response = requests.post(url, headers=headers, data=json.dumps(data))
