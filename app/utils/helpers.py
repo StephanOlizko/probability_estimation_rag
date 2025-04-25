@@ -4,26 +4,30 @@ from os import environ
 from dotenv import load_dotenv
 import logging
 from bs4 import BeautifulSoup
-import os
-import sys
-import logging
-import logging.handlers
+from groq import Groq, AsyncGroq
+import asyncio
+import aiohttp
+from .prompts import PromptFactory
 
-
-logger = logging.getLogger("retrieval_pipeline")
+# Configure logger
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 
 class OpenRouterClient:
     def __init__(self, model="deepseek/deepseek-chat-v3-0324:free"):
+        logger.debug(f"Initializing OpenRouterClient with model: {model}")
         api_key = environ.get("API_KEY")
+        if not api_key:
+            logger.warning("API_KEY environment variable not found for OpenRouterClient")
 
         self.api_key = api_key
         self.base_url = "https://openrouter.ai/api/v1"
-        self.model=model
+        self.model = model
 
     def generate_response(self, messages=None, response_format=None):
+        logger.debug(f"Generating response with OpenRouterClient using model: {self.model}")
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -37,6 +41,7 @@ class OpenRouterClient:
         if response_format is not None: data["response_format"] = response_format
 
         try:
+            logger.debug("Sending request to OpenRouter API")
             response = requests.post(url, headers=headers, data=json.dumps(data))
             return response.json()
         
@@ -45,21 +50,79 @@ class OpenRouterClient:
             return None    
 
 
-def get_general_topic(text, model="deepseek/deepseek-chat-v3-0324:free"):    
-    # This function is used to get the general topic in a few words of a text using the OpenRouter API.
-    # It takes the text and model as input and returns the topic.
+class GroqClient:
+    def __init__(self, model="llama-3.1-8b-instant"):
+        logger.debug(f"Initializing GroqClient with model: {model}")
+        api_key = environ.get("GROQ_API_KEY")
+        if not api_key:
+            logger.warning("GROQ_API_KEY environment variable not found for GroqClient")
 
-    client = OpenRouterClient(model=model)
-    messages = [{"role": "user", "content": f"Please provide a general topic for the following text text in a few words: \n\n {text}"},
-                {"role": "system", "content": "You are a helpful assistant that provides a general topic for the text. Your output should be a few words with no other text."}]
-    response = client.generate_response(messages=messages)
-    if response and "choices" in response and len(response["choices"]) > 0:
-        return response["choices"][0]["message"]["content"]
-    else:
-        return None
+        self.model = model
+        self.client = Groq(api_key=api_key, max_retries=5)
+
+    def generate_response(self, messages=None, response_format={"type": "json_object"}, temperature=1, max_tokens=1024, top_p=1):
+        logger.debug(f"Generating response with GroqClient using model: {self.model}")
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_format=response_format,
+                temperature=temperature,
+                max_completion_tokens=max_tokens,
+                top_p=top_p,
+                stream=False,
+                stop=None,
+            )
+            logger.debug("Successfully received response from Groq API")
+            return completion.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Error in GroqClient: {e}")
+            return None
+
+
+class AsyncGroqClient:
+    def __init__(self, model="llama-3.1-8b-instant"):
+        logger.debug(f"Initializing AsyncGroqClient with model: {model}")
+        api_key = environ.get("GROQ_API_KEY")
+        if not api_key:
+            logger.warning("GROQ_API_KEY environment variable not found for AsyncGroqClient")
+
+        self.model = model
+        self.client = AsyncGroq(api_key=api_key, max_retries=5)
+
+    async def generate_response(self, messages=None, response_format={"type": "json_object"}, temperature=1, max_tokens=1024, top_p=1):
+        logger.debug(f"Generating async response with AsyncGroqClient using model: {self.model}")
+        try:
+            completion = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_format=response_format,
+                temperature=temperature,
+                max_completion_tokens=max_tokens,
+                top_p=top_p,
+                stream=False,
+                stop=None,
+            )
+            logger.debug("Successfully received response from async Groq API")
+            return completion.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Error in AsyncGroqClient: {e}")
+            return None
+
+
+def get_general_topic(text, client = None):
+
+    client = GroqClient(model="llama-3.1-8b-instant")
+    logger.info(f"Getting general topic using model: {client.model}")
+
+    messages = PromptFactory.create_general_topic_prompt(text)
+    response = client.generate_response(messages=messages, response_format={"type": "text"})
+
+    return response
     
 
 def generate_response_based_on_context(messages, model="deepseek/deepseek-chat-v3-0324:free"):
+    logger.info(f"Generating response based on context using model: {model}")
     # This function is used to get the response based on the context using the OpenRouter API.
     # It takes the messages and model as input and returns the response.
 
@@ -68,6 +131,8 @@ def generate_response_based_on_context(messages, model="deepseek/deepseek-chat-v
     return response
     
 def get_relevant_news_links(query, params=None, max_results=500):
+    logger.info(f"Getting relevant news links for query: '{query}' with max_results: {max_results}")
+
     links = []
 
     base_url = "https://content.guardianapis.com/search"
@@ -79,14 +144,9 @@ def get_relevant_news_links(query, params=None, max_results=500):
 
     str_add = []
     if params is not None:
+        logger.debug(f"Using search parameters: {params}")
         for key, value in params.items():
-            if key == "from-date":
-                str_add.append(f"{key}={value}")
-            elif key == "to-date":
-                str_add.append(f"{key}={value}")
-            elif key == "page-size":
-                str_add.append(f"{key}={value}")
-            elif key == "order-by":
+            if key in ["from-date", "to-date", "page-size", "order-by"]:
                 str_add.append(f"{key}={value}")
     
     query_str = query.replace(" ", "%20")
@@ -123,11 +183,12 @@ def get_relevant_news_links(query, params=None, max_results=500):
         if len(links) >= max_results:
             break
 
-    logger.debug(f"Total links fetched: {len(links)}")
+    logger.info(f"Total links fetched: {len(links)}")
     return links[:max_results]
     
 
 def get_news_text_from_links(links):
+    logger.info(f"Getting news text from {len(links)} links (synchronous)")
     texts = []
 
     for link in links:
@@ -151,21 +212,100 @@ def get_news_text_from_links(links):
                     text += div.get_text(strip=False) + "\n"
 
                 texts.append(text.strip())
+                logger.debug(f"Successfully fetched content from {link}")
             else:
                 logger.error(f"Error fetching content from {link}: {response.status_code}")
         except Exception as e:
             logger.error(f"Exception occurred while fetching content from {link}: {e}")
     
-    logger.debug(f"Total texts fetched: {len(texts)}")
+    logger.info(f"Total texts fetched: {len(texts)}")
     return texts
 
 
+async def get_news_text_from_links_async(links):
+    logger.info(f"Getting news text from {len(links)} links (asynchronous)")
+    texts = []
+    
+    async def fetch_link(link, retry_count=3, backoff_factor=2.5):
+        for attempt in range(retry_count + 1):
+            try:
+                delay = 0.5 * (backoff_factor ** attempt) + 0.3
+                if attempt > 0:
+                    logger.info(f"Retry attempt {attempt} for {link} with delay {delay:.2f}s")
+                    await asyncio.sleep(delay)
+
+                session = aiohttp.ClientSession()
+                try:
+                    logger.info(f"Fetching link {links.index(link) + 1}/{len(links)}")
+                    async with session.get(link) as response:
+                        if response.status == 200:
+                            text = ""
+                            html = await response.text()
+                            soup = BeautifulSoup(html, 'html.parser')
+                            
+                            standfirst_divs = soup.find_all('div', attrs={'data-gu-name': 'headline'})
+                            for div in standfirst_divs:
+                                text += div.get_text(strip=False) + "\n"
+                            
+                            standfirst_divs = soup.find_all('div', attrs={'data-gu-name': 'standfirst'})
+                            for div in standfirst_divs:
+                                text += div.get_text(strip=False) + "\n"
+                            
+                            standfirst_divs = soup.find_all('div', attrs={'data-gu-name': 'body'})
+                            for div in standfirst_divs:
+                                text += div.get_text(strip=False) + "\n"
+                            
+                            logger.debug(f"Successfully fetched content from {link}")
+                            return text.strip()
+                        else:
+                            logger.error(f"Error fetching content from {link}: {response.status}")
+                            return None
+                finally:
+                    await session.close()
+            except Exception as e:
+                logger.error(f"Exception occurred while fetching content from {link}: {e}")
+                if attempt == retry_count:
+                    return None
+    
+    # Create tasks for all links
+    logger.debug(f"Creating tasks for {len(links)} links")
+    tasks = [fetch_link(link) for link in links]
+    
+    # Execute all tasks concurrently
+    logger.debug("Executing tasks concurrently")
+    results = await asyncio.gather(*tasks)
+    
+    # Filter out None results
+    texts = [text for text in results if text is not None]
+    
+    logger.info(f"Total texts fetched asynchronously: {len(texts)}")
+    return texts
+
 
 if __name__ == "__main__":
-    links = get_relevant_news_links("AI", {"from-date": "2023-01-01", "to-date": "2023-10-01", "page-size": 5, "order-by": "newest"}, max_results=5)
-    texts = get_news_text_from_links(links)
+    # Set up logging for main execution
+    logging.basicConfig(level=logging.INFO, 
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    import time
+    logger.info("Starting news retrieval process")
+    
+    links = get_relevant_news_links("Ukraine", max_results=100)
+    logger.info(f"Fetched {len(links)} links")
 
-    for text in texts:
-        print(text)
-        print("="*80)
-        print("\n")
+    logger.info("Starting synchronous fetching")
+    t = time.time()
+    texts = get_news_text_from_links(links)
+    elapsed = time.time() - t
+    logger.info(f"Time taken for synchronous fetching: {elapsed:.2f} seconds")
+    logger.info(f"Fetched {len(texts)} texts")
+
+    logger.info("_" * 50)
+
+    logger.info("Starting asynchronous fetching")
+    t = time.time()
+    loop = asyncio.get_event_loop()
+    texts = loop.run_until_complete(get_news_text_from_links_async(links))
+    elapsed = time.time() - t
+    logger.info(f"Time taken for asynchronous fetching: {elapsed:.2f} seconds")
+    logger.info(f"Fetched {len(texts)} texts")

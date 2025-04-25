@@ -7,9 +7,11 @@ from reranker.reranker import Reranker
 from evaluation.metrics import evaluate
 import pandas as pd
 from utils.helpers import OpenRouterClient, get_general_topic, get_relevant_news_links, get_news_text_from_links, generate_response_based_on_context
+import logging
 
+setup_logger()
+logger = logging.getLogger(__name__)
 
-logger = setup_logger()
 config = Config()
 
 def main():

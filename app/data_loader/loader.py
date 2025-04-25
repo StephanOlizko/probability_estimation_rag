@@ -1,4 +1,3 @@
-import os
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 def chunk_texts(texts, metadatas=None, chunk_size=500, chunk_overlap=50):
