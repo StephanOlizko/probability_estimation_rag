@@ -9,4 +9,4 @@ class Config():
         self.chunk_overlap = 50
         self.k = 10
         self.fetching_links_num = 100
-        self.config_path = "metrics/.log"
+        self.config_path = ".log"

@@ -199,7 +199,7 @@ class AsyncBinaryQuestionNaiveRAG(BaseRAG):
         self.logger.info("Initializing SBERT encoder")
         self.encoder = SBERTEncoder()
     
-    async def get_data_from_theguardian(self, query):
+    async def get_data_from_theguardian(self, query, date):
         """
         Асинхронное получение данных из The Guardian по запросу.
 
@@ -212,7 +212,7 @@ class AsyncBinaryQuestionNaiveRAG(BaseRAG):
         self.logger.info(f"Extracted topic: '{topic}'")
         
         self.logger.info(f"Getting relevant news links (max results: {config.fetching_links_num})")
-        links = get_relevant_news_links(topic, max_results=config.fetching_links_num)
+        links = get_relevant_news_links(topic, max_results=config.fetching_links_num, params={"to-date": date})
         self.logger.info(f"Found {len(links)} news links")
         
         self.logger.info("Fetching text from links asynchronously")
@@ -235,7 +235,7 @@ class AsyncBinaryQuestionNaiveRAG(BaseRAG):
 
         return texts
     
-    async def run(self, query, data=None):
+    async def run(self, query, data=None, date=None):
         """
         Запуск асинхронного RAG пайплайна для бинарных вопросов.
 
@@ -249,7 +249,7 @@ class AsyncBinaryQuestionNaiveRAG(BaseRAG):
         self.logger.info("Acquiring data")
         if data is None:
             self.logger.info("No data provided, fetching from The Guardian")
-            texts = await self.get_data_from_theguardian(query)
+            texts = await self.get_data_from_theguardian(query, date)
         else:
             self.logger.info("Using provided local data")
             texts = self.get_data_from_local(query, data)
@@ -311,7 +311,7 @@ class AsyncBinaryQuestionRAG_hybrid_crossencoder(BaseRAG):
         
         self.logger.info("Initialization complete!")
     
-    async def get_data_from_theguardian(self, query):
+    async def get_data_from_theguardian(self, query, date):
         """
         Асинхронное получение данных из The Guardian по запросу.
 
@@ -324,7 +324,7 @@ class AsyncBinaryQuestionRAG_hybrid_crossencoder(BaseRAG):
         self.logger.info(f"Extracted topic: '{topic}'")
         
         self.logger.info(f"Getting relevant news links (max results: {config.fetching_links_num})")
-        links = get_relevant_news_links(topic, max_results=config.fetching_links_num)
+        links = get_relevant_news_links(topic, max_results=config.fetching_links_num, params={"to-date": date})
         self.logger.info(f"Found {len(links)} news links")
         
         self.logger.info("Fetching text from links asynchronously")
@@ -347,7 +347,7 @@ class AsyncBinaryQuestionRAG_hybrid_crossencoder(BaseRAG):
 
         return texts
     
-    async def run(self, query, data=None):
+    async def run(self, query, data=None, date=None):
         """
         Запуск асинхронного RAG пайплайна для бинарных вопросов.
 
@@ -361,7 +361,7 @@ class AsyncBinaryQuestionRAG_hybrid_crossencoder(BaseRAG):
         self.logger.info("STEP 1: Acquiring data")
         if data is None:
             self.logger.info("No data provided, fetching from The Guardian")
-            texts = await self.get_data_from_theguardian(query)
+            texts = await self.get_data_from_theguardian(query, date)
         else:
             self.logger.info("Using provided local data")
             texts = self.get_data_from_local(query, data)
