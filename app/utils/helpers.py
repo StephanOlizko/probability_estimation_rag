@@ -8,6 +8,7 @@ from groq import Groq, AsyncGroq
 import asyncio
 import aiohttp
 from .prompts import PromptFactory
+import random
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -92,6 +93,7 @@ class AsyncGroqClient:
 
     async def generate_response(self, messages=None, response_format={"type": "json_object"}, temperature=1, max_tokens=1024, top_p=1):
         logger.debug(f"Generating async response with AsyncGroqClient using model: {self.model}")
+        await asyncio.sleep(random.randint(5, 10))
         try:
             completion = await self.client.chat.completions.create(
                 model=self.model,
@@ -148,7 +150,10 @@ def get_relevant_news_links(query, params=None, max_results=500):
         for key, value in params.items():
             if key in ["from-date", "to-date", "page-size", "order-by"]:
                 str_add.append(f"{key}={value}")
-    
+
+    str_add.append("page-size=100")
+    str_add.append("order-by=relevance")
+
     query_str = query.replace(" ", "%20")
     str_add.append(f"q={query_str}")
     str_add.append(f"api-key={api_key}")
@@ -184,7 +189,7 @@ def get_relevant_news_links(query, params=None, max_results=500):
             break
 
     logger.info(f"Total links fetched: {len(links)}")
-    return links[:max_results]
+    return list(reversed(links[:max_results]))
     
 
 def get_news_text_from_links(links):
@@ -226,11 +231,11 @@ async def get_news_text_from_links_async(links):
     logger.info(f"Getting news text from {len(links)} links (asynchronous)")
     texts = []
     
-    async def fetch_link(link, retry_count=3, backoff_factor=2.5):
+    async def fetch_link(link, retry_count=10, backoff_factor=2.5):
         for attempt in range(retry_count + 1):
             try:
                 delay = 0.5 * (backoff_factor ** attempt) + 0.3
-                if attempt > 0:
+                if attempt >= 0:
                     logger.info(f"Retry attempt {attempt} for {link} with delay {delay:.2f}s")
                     await asyncio.sleep(delay)
 

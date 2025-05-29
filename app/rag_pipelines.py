@@ -9,7 +9,11 @@ from logger import setup_logger
 from config import Config
 import asyncio
 import logging
+import langchain, openai
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 setup_logger()
 logger = logging.getLogger(__name__)
 
@@ -441,6 +445,178 @@ class AsyncBinaryQuestionRAG_hybrid_crossencoder(BaseRAG):
                     return None
         
         return parsed_response
+    
+
+class AsyncBinaryQuestionRAG_hybrid_crossencoder_CoT(BaseRAG):
+    """
+    Асинхронный RAG пайплайн для обработки бинарных вопросов с использованием LLM и новостей.
+    """
+    def __init__(self, model_name="llama-3.1-8b-instant"):
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger.info(f"Initializing {self.__class__.__name__} with model {model_name}")
+        self.logger.info("Initializing AsyncBinaryQuestionRAG_hybrid_crossencoder")
+        
+        self.logger.info("Initializing dense encoder")
+        self.encoder_dense = SBERTEncoder()
+        self.logger.info(f"Dense encoder initialized: {type(self.encoder_dense).__name__}")
+        
+        self.logger.info("Initializing sparse encoder")
+        self.encoder_sparse = TfidfEncoder()
+        self.logger.info(f"Sparse encoder initialized: {type(self.encoder_sparse).__name__}")
+        
+        self.logger.info("Initializing reranker")
+        self.reranker = Reranker()
+        self.logger.info(f"Reranker initialized: {type(self.reranker).__name__}")
+
+        self.logger.info("Initializing LLM client")
+        self.client = openai.AsyncOpenAI(
+            api_key=os.getenv("GROQ_API_KEY"),
+            base_url="https://api.groq.com/openai/v1"
+        )
+        self.model_name = model_name
+        self.logger.info(f"LLM client initialized: {type(self.client).__name__}")
+        
+        self.logger.info("Initialization complete!")
+    
+    def get_data_from_local(self, query, articles):
+        """
+        Получение данных из локального источника по запросу.
+
+        :param query: Запрос для поиска новостей.
+        :param articles: Локальные статьи для поиска.
+        :return: Список текстов статей.
+        """
+        self.logger.info(f"Retrieving data from local articles for query: '{query}'")
+        texts = [article["text"] for article in articles]
+        self.logger.info(f"Extracted {len(texts)} articles from local data")
+
+        return texts
+    
+    async def run(self, query, data=None):
+        """
+        Запуск асинхронного RAG пайплайна для бинарных вопросов.
+
+        :param query: Запрос для обработки.
+        :param data: Данные для поиска.
+        :return: Ответ от модели.
+        """
+        self.logger.info(f"Starting hybrid RAG pipeline for query: '{query}'")
+        
+        # Data acquisition
+        self.logger.info("STEP 1: Acquiring data")
+        self.logger.info("Using provided local data")
+        texts = self.get_data_from_local(query, data)
+        self.logger.info(f"Data acquisition complete. Total texts: {len(texts)}")
+
+        # Text chunking
+        self.logger.info("STEP 2: Chunking texts")
+        self.logger.info(f"Chunk size: {config.chunk_size}, overlap: {config.chunk_overlap}")
+        documents = chunk_texts(texts, chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap)
+        chunks = [doc.page_content for doc in documents]
+        self.logger.info(f"Chunking complete. Total chunks: {len(chunks)}")
+        
+        # Encoding
+        self.logger.info("STEP 3: Encoding chunks")
+        self.logger.info("Creating dense embeddings with SBERT encoder")
+        vectors_dense = self.encoder_dense.encode(chunks)
+        query_vector_dense = self.encoder_dense.encode([query])
+        self.logger.info(f"Dense encoding complete: {len(vectors_dense)} vectors generated")
+        
+        self.logger.info("Creating sparse embeddings with TF-IDF encoder")
+        vectors_sparse = self.encoder_sparse.fit_transform(chunks)
+        query_vector_sparse = self.encoder_sparse.transform([query])
+        self.logger.info(f"Sparse encoding complete: {vectors_sparse.shape} vectors generated")
+
+        # Indexing
+        self.logger.info("STEP 4: Building indices")
+        self.logger.info("Building dense index")
+        indexer_dense = Indexer()
+        indexer_dense.build(vectors_dense, chunks)
+        self.logger.info("Building sparse index")
+        indexer_sparse = Indexer()
+        indexer_sparse.build(vectors_sparse, chunks)
+        self.logger.info("Index building complete")
+
+        # Retrieval
+        self.logger.info("STEP 5: Retrieving relevant chunks")
+        self.logger.info(f"Searching with dense index (top-k = {config.k})")
+        results_dense = indexer_dense.search(query_vector=query_vector_dense[0], top_k=config.k)
+        self.logger.info(f"Found {len(results_dense)} chunks from dense search")
+        
+        self.logger.info(f"Searching with sparse index (top-k = {config.k})")
+        results_sparse = indexer_sparse.search(query_vector=query_vector_sparse[0], top_k=config.k)
+        self.logger.info(f"Found {len(results_sparse)} chunks from sparse search")
+        
+        # Merging and reranking
+        self.logger.info("STEP 6: Hybrid fusion and reranking")
+        added_results = list(set(results_dense) | set(results_sparse))
+        self.logger.info(f"Total unique chunks after fusion: {len(added_results)}")
+        
+        self.logger.info("Applying cross-encoder reranking")
+        reranked_results = self.reranker.rerank(query, added_results)
+        self.logger.info(f"Reranking complete. Using top {len(reranked_results)} chunks")
+
+        # Context preparation
+        self.logger.info("STEP 7: Preparing context for LLM")
+        context = "\n\n".join(reranked_results)
+        self.logger.info(f"Context size: {len(context)} characters")
+        
+        # LLM response generation
+        self.logger.info("STEP 8: Generating response with LLM")
+        
+        self.logger.info("Pro/Con arguments generation")
+        #async with self.client:
+        messages_pro = PromptFactory.create_pro_arguments_prompt_with_context(query, context)
+        messages_con = PromptFactory.create_con_arguments_prompt_with_context(query, context)
+
+        self.logger.info("Prompts created successfully")
+        self.logger.info("Sending request to LLM for Pro/Con arguments")
+
+        response_pro = await self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages_pro,
+            #response_format={"type": "json_object"}
+        )
+
+        response_con = await self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages_con,
+            #response_format={"type": "json_object"}
+        )
+
+        self.logger.info("Response received successfully")
+
+        self.logger.info(f"Pro arguments: {response_pro.choices[0].message.content}")
+        self.logger.info(f"Con arguments: {response_con.choices[0].message.content}")
+        
+        self.logger.info("Sending final request to LLM for probability estimation")
+
+        for i in range(5):
+            try:
+                messages_prob = PromptFactory.create_final_reasoning_prompt_with_arguments(
+                    query, 
+                    response_pro.choices[0].message.content, 
+                    response_con.choices[0].message.content
+                )
+                response_prob = await self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages_prob,
+                    response_format={"type": "json_object"}
+                )
+                parsed_response = ResponseProbJustification.model_validate_json(response_prob.choices[0].message.content)
+                self.logger.info("Final response received and parsed successfully")
+                break
+            except Exception as e:
+                self.logger.error(f"Error during final LLM response generation: {e}")
+                await asyncio.sleep(10)  # Wait before retrying
+                if i < 5:
+                    self.logger.info("Retrying...")
+                else:
+                    self.logger.error("Max retries reached. Returning None.")
+                    return None
+        
+        return (parsed_response, response_pro.choices[0].message.content, response_con.choices[0].message.content)
+
 
 
 if __name__ == "__main__":
@@ -455,7 +631,7 @@ if __name__ == "__main__":
 
     logger.info("Running Async Hybrid RAG with Cross-Encoder")
 
-    async_rag_pipeline = AsyncBinaryQuestionRAG_hybrid_crossencoder()
+    async_rag_pipeline = AsyncBinaryQuestionRAG_hybrid_crossencoder_CoT()
     start_time = time.time()
     response = asyncio.run(async_rag_pipeline.run(query, data=articles))
     end_time = time.time()
@@ -463,3 +639,19 @@ if __name__ == "__main__":
     logger.info(f"Time taken: {end_time - start_time:.2f} seconds")
 
     logger.info("_" * 50)
+    """
+    client = openai.OpenAI(
+        api_key=os.getenv("GROQ_API_KEY"),
+        base_url="https://api.groq.com/openai/v1"
+    )
+    model = "llama-3.1-8b-instant"
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages
+    )
+    print(response.choices[0].message.content)"""

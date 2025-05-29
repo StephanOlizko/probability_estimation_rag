@@ -3,7 +3,7 @@ class Config():
 
         #self.data_path = "data/clean_data.csv"
         #self.encoder_types = ["sentence_transformer", "tfidf"]
-        #self.index_type = "faiss"
+        self.index_type = "faiss"
         #self.query = "Will a recession begin in the United States in the following years?"
         self.chunk_size = 500
         self.chunk_overlap = 50

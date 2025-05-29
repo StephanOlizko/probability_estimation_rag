@@ -86,3 +86,60 @@ class PromptFactory:
                 "content": f"Event: {query}\n\n Context: {context}\n\n What is the probability this event will occur? Please follow the required JSON format."
             }
         ]
+
+    @staticmethod
+    def create_pro_arguments_prompt_with_context(query: str, context: str) -> list:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert analyst. Your task is to argue **why** the given binary event is **likely** to happen, "
+                    "based on the provided context. Focus only on supportive evidence and logical reasoning. "
+                    "Don't mention opposing views."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Event: {query}\n\nContext:\n{context}\n\nWhy is this event **likely** to happen?"
+            }
+        ]
+
+    @staticmethod
+    def create_con_arguments_prompt_with_context(query: str, context: str) -> list:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert analyst. Your task is to argue **why** the given binary event is **unlikely** to happen, "
+                    "based on the provided context. Focus only on counter-evidence and skeptical reasoning. "
+                    "Don't mention supportive views."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Event: {query}\n\nContext:\n{context}\n\nWhy is this event **unlikely** to happen?"
+            }
+        ]
+
+    @staticmethod
+    def create_final_reasoning_prompt_with_arguments(query: str, pro_argument: str, con_argument: str) -> list:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are a forecasting assistant combining multiple lines of reasoning. "
+                    "Given arguments both for and against a binary event, assess the overall probability (0-100%) of the event happening. "
+                    "Respond strictly in JSON format using this schema:\n"
+                    f"{json.dumps(ResponseProbJustification.model_json_schema(), indent=2)}"
+                )
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Event: {query}\n\n"
+                    f"Arguments supporting the event:\n{pro_argument}\n\n"
+                    f"Arguments against the event:\n{con_argument}\n\n"
+                    "What is the most likely outcome? Provide final reasoning and a probability estimate."
+                )
+            }
+        ]
