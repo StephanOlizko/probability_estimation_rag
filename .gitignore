@@ -8,3 +8,6 @@ pipeline.log
 *__pycache__*
 data/
 *.log
+metrics/data_extra_temp.csv
+metrics/data_temp.csv
+
