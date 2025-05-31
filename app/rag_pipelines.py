@@ -435,6 +435,7 @@ class AsyncBinaryQuestionRAG_hybrid_crossencoder(BaseRAG):
                 response = await self.client.generate_response(messages=messages, response_format={"type": "json_object"})
                 parsed_response = ResponseProbJustification.model_validate_json(response)
                 self.logger.info("Response received and parsed successfully")
+                break
 
             except Exception as e:
                 self.logger.error(f"Error during LLM response generation: {e}")
