@@ -14,6 +14,8 @@ The system implements three main architectural variants:
 - **NaiveRAG**: Classic RAG implementation with sequential search and generation
 - **HybridRAG**: Advanced architecture combining multiple search strategies with cross-encoder reranking
 
+![alt text](graph.png)
+
 ### Core Components
 
 1. **Knowledge Base Formation**
@@ -169,4 +171,4 @@ This implementation is based on the research conducted at Saint Petersburg State
 
 
 
-![alt text](graph.png)
+
