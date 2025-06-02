@@ -632,7 +632,7 @@ if __name__ == "__main__":
 
     logger.info("Running Async Hybrid RAG with Cross-Encoder")
 
-    async_rag_pipeline = AsyncBinaryQuestionRAG_hybrid_crossencoder_CoT()
+    async_rag_pipeline = AsyncBinaryQuestionRAG_hybrid_crossencoder()
     start_time = time.time()
     response = asyncio.run(async_rag_pipeline.run(query, data=articles))
     end_time = time.time()
